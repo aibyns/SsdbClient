@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Net.NetworkInformation;
 using System.Text;
@@ -18,9 +18,11 @@ namespace Ljlx.SsDb
          
         private static  Dictionary<int, Link> _wSocketPool; // 连接池 
         protected static int WritePoolIndex;
+        protected static int WriteTotal;
 
-        private static  Dictionary<int, Link> _rSocketPool; // 连接池
+        private static Dictionary<int, Link> _rSocketPool; // 连接池
         protected static int ReadPoolIndex;
+        protected static int ReadTotal;
 
         private static readonly Mutex MMutex = new Mutex();
 
@@ -57,7 +59,9 @@ namespace Ljlx.SsDb
             FaultReadIps = new List<string>();
 
             WritePoolIndex = 0;
-            ReadPoolIndex = 0; 
+            WriteTotal = 0;
+            ReadPoolIndex = 0;
+            ReadTotal = 0;
         }
 
         public void Init()
@@ -73,10 +77,11 @@ namespace Ljlx.SsDb
                 var ip = ipInfo[0];
                 var port = ipInfo[1];
 
-                for (var i = 0; i < OneConnectionPoolSize; i++)
+                for (var i = ReadTotal; i < ReadTotal + OneConnectionPoolSize; i++)
                 {
                     var link = new Link(ip, int.Parse(port)) { Status = true, IpPort = readIp };
                     _rSocketPool.Add(i, link);
+                    ReadTotal++;
                 }
             }
             #endregion 
@@ -92,10 +97,11 @@ namespace Ljlx.SsDb
                 var ip = ipInfo[0];
                 var port = ipInfo[1];
 
-                for (var i = 0; i < OneConnectionPoolSize; i++)
+                for (var i = WriteTotal; i < WriteTotal + OneConnectionPoolSize; i++)
                 {
                     var link = new Link(ip, int.Parse(port)) {Status = true, IpPort= writeIp };
                     _wSocketPool.Add(i,link);
+                    WriteTotal++;
                 } 
             }
             #endregion
@@ -157,7 +163,7 @@ namespace Ljlx.SsDb
             MMutex.WaitOne(); //先阻塞  
             if (ReadPoolIndex >= _rSocketPool.Count) ReadPoolIndex = 0;
 
-            for (var i = 0; i < _rSocketPool.Count; i++)
+            for (var i = ReadPoolIndex; i < _rSocketPool.Count; i++)
             {
                 if (!_rSocketPool[i].Status) continue;
                 _rSocketPool[i].Status = false;
@@ -315,11 +321,12 @@ namespace Ljlx.SsDb
                 if (reply != null && reply.Status == IPStatus.Success)
                 {
                     if (FaultReadIps.Contains(ipPort))  // 如果存在故障组 则表明一恢复正常
-                    { 
-                        for (var i = _rSocketPool.Count; i < OneConnectionPoolSize; i++)
+                    {  
+                        for (var i = ReadTotal; i < ReadTotal + OneConnectionPoolSize; i++)
                         {
                             var link = new Link(ip, int.Parse(port)) { Status = true, IpPort = ipPort };
                             _rSocketPool.Add(i, link);
+                            ReadTotal++;
                         }
 
                         FaultReadIps.Remove(ipPort);
@@ -344,11 +351,12 @@ namespace Ljlx.SsDb
                 if (reply != null && reply.Status == IPStatus.Success)
                 {
                     if (FaultWriteIps.Contains(ipPort)) // 如果存在故障组 则表明一恢复正常
-                    {
-                        for (var i = _wSocketPool.Count; i < OneConnectionPoolSize; i++)
+                    { 
+                        for (var i = WriteTotal; i < WriteTotal + OneConnectionPoolSize; i++)
                         {
                             var link = new Link(ip, int.Parse(port)) { Status = true, IpPort = ipPort };
                             _wSocketPool.Add(i, link);
+                            WriteTotal++;
                         }
 
                         FaultWriteIps.Remove(ipPort);
